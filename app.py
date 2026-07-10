@@ -14,6 +14,10 @@ Flow:
 Run with:  streamlit run app.py
 """
 
+import json
+import time
+from pathlib import Path
+
 import numpy as np
 import streamlit as st
 import plotly.graph_objects as go
@@ -21,6 +25,8 @@ from plotly.subplots import make_subplots
 
 import real_model as rm
 import seizure_features as sf
+
+RUNS_DIR = Path("runs")
 
 st.set_page_config(page_title="Thalamocortical Loop Simulator",
                     layout="wide", initial_sidebar_state="collapsed")
@@ -228,3 +234,25 @@ with col_right:
         st.caption("Note: V_PY is a proxy for the pyramidal population's aggregate membrane "
                    "potential -- the dominant contributor to EEG -- not a biophysically complete "
                    "EEG signal (no volume conduction / scalp filtering / source mixing).")
+
+        st.divider()
+        st.markdown("##### 4 · Export this run for comparison against real EEG")
+        st.caption("Saves everything `compare_with_real_eeg.py` needs (all 4 populations, "
+                   "sampling rate, input params, features) as a single .npz file under `runs/`.")
+        export_clicked = st.button("Export this run", width="stretch", key="export_btn")
+        if export_clicked:
+            RUNS_DIR.mkdir(exist_ok=True)
+            kind_slug = "haghighi" if st.session_state.input_kind.startswith("Haghighi") else "suffczynski"
+            fname = RUNS_DIR / f"{kind_slug}_{time.strftime('%Y%m%d_%H%M%S')}.npz"
+            np.savez(
+                fname,
+                t=st.session_state.sim_t,
+                y=st.session_state.sim_y,          # shape (4, n_eval): PY, IN, TC, RE
+                v_py=st.session_state.sim_y[rm.V_PY],
+                fs=st.session_state.sim_fs,
+                duration=st.session_state.duration,
+                kind=st.session_state.input_kind,
+                params_json=json.dumps(st.session_state.input_params),
+                features_json=json.dumps(st.session_state.sim_features),
+            )
+            st.success(f"Saved to `{fname}`. Point `compare_with_real_eeg.py --runs {fname}` at it.")
