@@ -10,6 +10,8 @@ Flow:
      engineered thalamocortical model (real_model.py) with that input,
      and shows the output (EEG-proxy V_PY) plus feature info on the
      right half of the screen.
+  4. Export the run -> saved to runs/ as a self-describing .npz, for
+     compare_with_real_eeg.py to pick up on the command line.
 
 Run with:  streamlit run app.py
 """
@@ -27,6 +29,7 @@ import real_model as rm
 import seizure_features as sf
 
 RUNS_DIR = Path("runs")
+ICTAL_THRESHOLD = 2.0  # same threshold used in the "Interpretation" line below
 
 st.set_page_config(page_title="Thalamocortical Loop Simulator",
                     layout="wide", initial_sidebar_state="collapsed")
@@ -223,13 +226,16 @@ with col_right:
         m4.metric("Band power (3–12Hz)", f"{feats['band_power']:.3g}")
 
         # simple, transparent interpretation -- not a black-box classifier
-        threshold = 2.0  # informed by the earlier bias-sweep bistability check
-        state_label = "ictal-like (large-amplitude oscillation)" if feats["max_amplitude"] > threshold \
+        state_label = "ictal-like (large-amplitude oscillation)" if feats["max_amplitude"] > ICTAL_THRESHOLD \
             else "interictal-like (small-amplitude / resting)"
         st.markdown(f"**Interpretation:** based on a simple amplitude threshold "
-                    f"(peak-to-peak > {threshold}), this output looks **{state_label}**. "
+                    f"(peak-to-peak > {ICTAL_THRESHOLD}), this output looks **{state_label}**. "
                     f"This is a transparent heuristic, not a validated clinical classifier — "
-                    f"see the project README for how to validate this properly against real EEG.")
+                    f"see the project README for how to validate this properly against real EEG. "
+                    f"**This threshold is *not* used to tag exported runs below** -- that's a "
+                    f"manual choice you make yourself, since this heuristic isn't reliable enough "
+                    f"to trust as ground truth (e.g. it currently calls the default resting bias "
+                    f"'ictal-like' too, which is wrong).")
 
         st.caption("Note: V_PY is a proxy for the pyramidal population's aggregate membrane "
                    "potential -- the dominant contributor to EEG -- not a biophysically complete "
@@ -237,13 +243,33 @@ with col_right:
 
         st.divider()
         st.markdown("##### 4 · Export this run for comparison against real EEG")
-        st.caption("Saves everything `compare_with_real_eeg.py` needs (all 4 populations, "
-                   "sampling rate, input params, features) as a single .npz file under `runs/`.")
+        st.caption("Saves everything `compare_with_real_eeg.py` needs as a single .npz file "
+                   "under `runs/`. The filename auto-includes the ictal/interictal tag, max "
+                   "amplitude, and dominant frequency, so you can tell runs apart with `ls` "
+                   "alone -- no need to open the file.")
+        run_name = st.text_input("Optional label (e.g. 'high_bias_test1')", value="",
+                                  key="run_name_input")
+        tag_choice = st.radio(
+            "How do you want to tag this run?",
+            ["Interictal (baseline / resting params)", "Ictal (seizure-like params)"],
+            horizontal=True, key="tag_choice",
+            help="This is YOUR call based on the input params you chose, not the app's guess. "
+                 "The amplitude-threshold heuristic above is unreliable as a classifier -- see "
+                 "the README -- so tagging is manual here rather than automatic.")
         export_clicked = st.button("Export this run", width="stretch", key="export_btn")
         if export_clicked:
             RUNS_DIR.mkdir(exist_ok=True)
             kind_slug = "haghighi" if st.session_state.input_kind.startswith("Haghighi") else "suffczynski"
-            fname = RUNS_DIR / f"{kind_slug}_{time.strftime('%Y%m%d_%H%M%S')}.npz"
+
+            tag = "ictal" if tag_choice.startswith("Ictal") else "interictal"
+            maxamp = round(feats["max_amplitude"], 2)
+            domfreq = round(feats["dominant_freq_hz"], 2)
+            label_part = f"-{run_name.strip().replace(' ', '_')}" if run_name.strip() else ""
+
+            fname = (RUNS_DIR /
+                     f"{kind_slug}-{tag}-maxamp{maxamp}-domfreq{domfreq}hz{label_part}-"
+                     f"{time.strftime('%Y%m%d_%H%M%S')}.npz")
+
             np.savez(
                 fname,
                 t=st.session_state.sim_t,
