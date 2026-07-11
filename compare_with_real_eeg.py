@@ -155,30 +155,67 @@ def main():
               "(.npz from app.py) to compare against the numbers above.")
         return
 
-    print("Simulated model runs:")
+    # ---------------------------------------------------------------
+    # Each exported run is a WHOLE stationary trace (one fixed set of
+    # input params for the entire duration) -- there is no onset/event
+    # inside a single run to split in half. So each run gets ONE feature
+    # row, and the comparison happens ACROSS runs: runs tagged "ictal"
+    # (from app.py's filename tagging) vs. runs tagged "interictal",
+    # exactly mirroring how the real side compares an ictal EDF window
+    # against an interictal EDF window.
+    # ---------------------------------------------------------------
+    print("Simulated model runs (each run = one whole stationary trace):")
+    ictal_runs, interictal_runs = [], []
     for run_path in args.runs:
         data = np.load(run_path, allow_pickle=True)
         v_py = data["v_py"]
         fs_sim = float(data["fs"])
         kind = str(data["kind"])
         duration = float(data["duration"])
+        name = Path(run_path).name
 
-        # split the simulated run in half: first half as "baseline",
-        # second half as "test" -- adjust this if your input has a
-        # clear onset/offset structure (e.g. a step-change bias) instead
-        half = duration / 2
-        sim_first = eeg_segment_features(v_py, fs_sim, 0, half, f"[{kind}] first half")
-        sim_second = eeg_segment_features(v_py, fs_sim, half, duration, f"[{kind}] second half")
-        print_feature_row(sim_first)
-        print_feature_row(sim_second)
+        feats = eeg_segment_features(v_py, fs_sim, 0, duration, f"[{kind}] {name}")
+        print_feature_row(feats)
 
-        r_amp_sim, r_pow_sim, d_freq_sim = ratio_summary(sim_second, sim_first)
-        print(f"  --> {Path(run_path).name}: "
-              f"amplitude ratio = {r_amp_sim:.2f}x, band-power ratio = {r_pow_sim:.2f}x, "
-              f"dominant-freq shift = {d_freq_sim:+.2f} Hz\n")
+        if "-interictal-" in name:
+            interictal_runs.append(feats)
+        elif "-ictal-" in name:
+            ictal_runs.append(feats)
+        else:
+            print(f"    (no ictal/interictal tag found in filename -- skipped from the "
+                  f"group comparison below; re-export with app.py's current naming, or "
+                  f"rename the file to include '-ictal-' or '-interictal-')")
 
-    print("Compare the RATIOS/SHIFTS above (real vs. simulated), not the raw "
-          "amplitude numbers -- see the module docstring for why.")
+    print()
+    if ictal_runs and interictal_runs:
+        def avg_feats(rows, label):
+            return dict(
+                label=label,
+                mean_amplitude=np.mean([r["mean_amplitude"] for r in rows]),
+                max_amplitude=np.mean([r["max_amplitude"] for r in rows]),
+                band_power=np.mean([r["band_power"] for r in rows]),
+                dominant_freq_hz=np.mean([r["dominant_freq_hz"] for r in rows]),
+            )
+        model_ictal = avg_feats(ictal_runs, f"model ictal-tagged (n={len(ictal_runs)})")
+        model_interictal = avg_feats(interictal_runs, f"model interictal-tagged (n={len(interictal_runs)})")
+        r_amp_sim, r_pow_sim, d_freq_sim = ratio_summary(model_ictal, model_interictal)
+        print(f"  --> MODEL: ictal-tagged/interictal-tagged amplitude ratio = {r_amp_sim:.2f}x, "
+              f"band-power ratio = {r_pow_sim:.2f}x, "
+              f"dominant-freq shift = {d_freq_sim:+.2f} Hz")
+        print(f"  --> REAL EEG (for reference):  amplitude ratio = {r_amp:.2f}x, "
+              f"band-power ratio = {r_pow:.2f}x, dominant-freq shift = {d_freq:+.2f} Hz\n")
+        print("Compare these two ratio triplets -- same direction/rough magnitude is the goal, "
+              "not matching absolute numbers (see module docstring for why).")
+    else:
+        missing = []
+        if not ictal_runs:
+            missing.append("an '-ictal-' tagged run")
+        if not interictal_runs:
+            missing.append("an '-interictal-' tagged run")
+        print(f"Need at least one run from each group to compute a ratio -- missing "
+              f"{' and '.join(missing)}. Export one more run from app.py with the other "
+              f"kind of input (e.g. push the bias toward the bistable regime for an ictal "
+              f"one, or back to the default resting bias for an interictal one).")
 
 
 if __name__ == "__main__":
