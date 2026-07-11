@@ -1,3 +1,4 @@
-eeg data/
+eeg_data/
 venv/
 adult_eeg_data/
+runs/
