@@ -39,7 +39,7 @@ st.set_page_config(page_title="Thalamocortical Loop Simulator",
 # =====================================================================
 defaults = dict(input_created=False, sim_done=False,
                 input_t=None, input_cortical=None, input_sensory=None,
-                input_params=None, input_kind=None, input_f_s=None,
+                input_params=None, input_kind=None, input_f_c=None, input_f_s=None,
                 u_cortical_fn=None, u_sensory_fn=None, phi_RE=None, duration=None,
                 sim_t=None, sim_y=None, sim_features=None)
 for k, v in defaults.items():
@@ -130,6 +130,7 @@ with col_left:
                 "Sensory bias φ_bs": phi_bs, "Sensory sine amp φ_as": phi_as, "Sensory freq f_s (Hz)": f_s,
                 "Reticular bias φ_RE": phi_RE, "Duration (s)": duration,
             }
+            st.session_state.input_f_c = f_c
             st.session_state.input_f_s = f_s
         else:
             u_cortical_fn, _, _ = make_noise_fn(phi_bc, noise_c, duration, seed=seed)
@@ -139,6 +140,7 @@ with col_left:
                 "Sensory mean bias": phi_bs, "Sensory noise amp": noise_s,
                 "Reticular bias φ_RE": phi_RE, "Duration (s)": duration, "Seed": seed,
             }
+            st.session_state.input_f_c = None
             st.session_state.input_f_s = None
 
         st.session_state.input_t = t_plot
@@ -267,14 +269,17 @@ with col_right:
             meanamp = f"{feats['mean_amplitude']:.2f}".rstrip('0').rstrip('.')
             domfreq = f"{feats['dominant_freq_hz']:.2f}".rstrip('0').rstrip('.')
             label_part = f"-{run_name.strip().replace(' ', '_')}" if run_name.strip() else ""
-            fs_label = ""
-            if st.session_state.input_f_s is not None:
+            freq_label = ""
+            if st.session_state.input_f_c is not None and st.session_state.input_f_c > 0:
+                f_c_val = f"{st.session_state.input_f_c:.2f}".rstrip('0').rstrip('.')
+                freq_label = f"-f_c={f_c_val}Hz"
+            elif st.session_state.input_f_s is not None and st.session_state.input_f_s > 0:
                 f_s_val = f"{st.session_state.input_f_s:.2f}".rstrip('0').rstrip('.')
-                fs_label = f"-f_s={f_s_val}Hz"
+                freq_label = f"-f_s={f_s_val}Hz"
 
-            fname = RUNS_DIR / f"{kind_slug}-{tag}-meanamp{meanamp}-domfreq{domfreq}hz{fs_label}{label_part}.npz"
+            fname = RUNS_DIR / f"{kind_slug}-{tag}-meanamp{meanamp}-domfreq{domfreq}hz{freq_label}{label_part}.npz"
             if fname.exists():
-                fname = RUNS_DIR / f"{kind_slug}-{tag}-meanamp{meanamp}-domfreq{domfreq}hz{fs_label}{label_part}-{time.strftime('%Y%m%d_%H%M%S')}.npz"
+                fname = RUNS_DIR / f"{kind_slug}-{tag}-meanamp{meanamp}-domfreq{domfreq}hz{freq_label}{label_part}-{time.strftime('%Y%m%d_%H%M%S')}.npz"
 
             np.savez(
                 fname,
